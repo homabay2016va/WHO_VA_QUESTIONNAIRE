@@ -1,0 +1,544 @@
+---
+title: "KENYA VA Data Quality Review Protocol"
+editor_options:
+  chunk_output_type: console
+date: "December 29, 2018"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<!--
+This is a R Markdown comment:
+You can use this notation to comment-out text. For example if you wnat this to be a pure protocol (i.e. just the protocol steps), you can comment-out the sections titles "Findings" below and they will not appear in your output document.
+-->
+
+## Group Work and ToT Follow-up
+
+Over the last one and a half weeks in the "VA Data Quality Review and COD Assignment" Training of Trainers (5-16 November, 2018, Colombus, Ohio, USA) you have learned about the importance of VA raw data review, how to examine and review VA raw data using R, how the VA COD assignment algorithms work, how to run the VA COD algorithms, and how to interpret the outcome of the VA algorithm.
+
+As Master Trainers for VA data quality review and COD assignment, you are now equipped to train others on these topics and you can apply the methods learned to the VA data collected in your country on a routine basis. For that application of VA data quality review steps (both pre- and post-algorithm), we ask you to develop a local protocol for routine application in your country and to work with local stakeholders to apply that protocol to your VA data on a routine (time interval will depend on the rate of VA data collection in your setting) basis.
+To prepare you for the task of training others and the development of your local VA data quality review protocol, we have designed  this group exercise. You have been assigned to a group, to work together on the GroupWork.csv data set to apply the methods learned in Ohio and write a mock VA data quality review (pre- and post-algorithm) protocol and report (see **Findings** boxes below). In the course of the group exercise you will work together and teach each other to further solidify the learning from the Training of Trainers and you will develop the mock VA Data Quality Review Protocol / Report which you can use as a template for the protocol you will develop for application in your country.
+
+We suggest you structure the VA Data Quality Review Protocol / Report into sections called VA Raw Data Examination and Cleaning, COD Assignment, and VA COD Examination. Please clearly number the steps of the protocol and comment all R code to allow for future use.
+
+General procedure should be:
+
+1. Load your raw VA data
+2. Run cleaning codes
+3. Convert the data into a format that algorithms understand
+4. Run the COD algorithms 
+5. Run the analysis on your COD
+
+# 1. Load your raw VA data
+## VA Raw Data Examination and Cleaning
+```{r VA RAW DATA}
+#confirm your working directory
+getwd()
+
+#set your working directory for R projects
+setwd("D:/R codes/R SHINY PROJECT/Kenya_protocol")
+
+
+#install.packages("openVA")
+#install.packages("CrossVA")
+#install.packages("nbc4va")
+#install.packages("RMySQL")
+
+#import packages that are going to be used
+library("openVA")  ## load openVA
+library("CrossVA") 
+library("nbc4va")  ## load openVA
+#library(RMySQL)
+#import data
+vadata = read.csv("Data\\HBKeVA_cleaned.csv", stringsAsFactors = F)
+vadata2 = read.csv("Data\\va_2016.csv", stringsAsFactors = F)
+
+#confirm column names
+head(colnames(vadata),n=15)
+tail(colnames(vadata))
+
+
+#add missing columns to the dataset
+vadata$Id10189 = NA
+vadata$Id10197b = NA
+vadata$Id10362 = NA
+vadata$Id10082 = NA
+
+#rename the columns to short names 
+colnames(vadata) <- regmatches(colnames(vadata), regexpr("[^\\.]*$", colnames(vadata)))
+#colnames(vadata2) <- regmatches(colnames(vadata2), regexpr("[^\\.]*$", colnames(vadata2)))
+
+
+#View(vadata) #commented out this code to avoid having a huge document with rows and columns of the dataset
+```
+# 2. Run cleaning codes
+```{r data cleaning}
+
+#check age range: check range of ages to avoid negative values and values that are not acceptable
+table(vadata$ageInYears)
+
+#check wierd ages i.e. above 120
+table(vadata$ageInYears[which(vadata$ageInYears > 120)])#above 120 years
+
+#check age and level of education; you can substitute column name according to your VA DATA
+unique(vadata$Id10063)
+
+#filter complted VAs (exclude where consent was not given)
+tolower(vadata$Id10013) =='yes'
+which(vadata$Id10013 =='yes')
+completedVA= vadata[which(vadata$Id10013 =='yes'),]
+View(head(completedVA))
+
+# check completed VAs for hospital deaths, in KENYA VA is not done for health facility/hospital deaths
+unique(unlist(completedVA$Id10058))
+completedVA$Id10058[which(completedVA$Id10058 %in% c("hospital"))]
+
+#check consistency of 10227(Did (s)he have sores or ulcers anywhere on the body?) vs 10228(Did (s)he have sores?)
+vadata$Id10227[which(tolower(vadata$Id10228)=='yes' & tolower(vadata$Id10227) %in% c('dk','no'))]
+
+#check consistency of 10227(Did (s)he have sores or ulcers anywhere on the body?) vs 10230(Did (s)he have an ulcer (pit) on the foot?)
+vadata$Id10227[which(tolower(vadata$Id10230)=='yes' & tolower(vadata$Id10227) %in% c('dk','no'))]
+
+#CHECK 10235: available options for 10235 are face,trunk,extremeties,everywhere: make sure everywhere is not selected among other options
+unique(unlist(vadata$Id10235))
+vadata$Id10235[which(nchar(vadata$Id10235)>10 & vadata$Id10235 !='extremities' )]
+#OR USE THIS
+vadata$Id10235[which(nchar(vadata$Id10235)>10 & str_extract(vadata$Id10235,"everywhere")>1)]
+
+
+#CHECK 10260: available options for 10260 are right_side,left_side,lower_part_of_body,upper_part_of_body,one_leg_only,one_arm_only,whole_body,other: make sure whole_body is not selected among other options
+unique(unlist(vadata$Id10260))
+vadata$Id10260[which(nchar(vadata$Id10260)>10)]		
+vadata$Id10260[which(nchar(vadata$Id10260)>10 & str_extract(vadata$Id10260,"whole_body")>1)]
+
+#check consistency of 10227(Did (s)he have sores or ulcers anywhere on the body?) vs 10295(Did she have any ulcers (pits) in the breast?)
+vadata$Id10227[which(tolower(vadata$Id10295)=='yes' & tolower(vadata$Id10227) %in% c('dk','no'))]
+
+#id10366 requires entry in grammes as weight, check for values
+#N/B: YOU CAN DO THIS FOR ONLY COMPLETED VAs
+unique(unlist(vadata$Id10366))
+
+#harmonize the values to grames
+vadata$Id10366[which(vadata$Id10366<10)] ##any value lesss than 10
+vadata$Id10366[which(vadata$Id10366<100 & vadata$Id10366>=10)] ##any values between 10 and 100
+
+vadata$Id10366[which(vadata$Id10366<10)]*1000 #convert any value less than 10 to grammes (multiply by 1000)
+((vadata$Id10366[which(vadata$Id10366<100 & vadata$Id10366>=10)])/10)*1000 #convert any value between 10 and 100 to grammes (take the value, divide by 10 then multiply the result by 1000)
+
+#Assign the new values
+vadata$Id10366 = vadata$Id10366[which(vadata$Id10366<10)]*1000
+vadata$Id10366 =((vadata$Id10366[which(vadata$Id10366<100 & vadata$Id10366>=10)])/10)*1000
+
+
+
+#check invalid entries in education for child 
+which(vadata$isChild == 1 & vadata$Id10063 %in% c("higher_than_secondary_school","secondary_school"))
+
+#confirm relation of respondents to deceased - neonate
+table(vadata$Id10008[which(vadata$isNeonatal==1)])
+
+#N/B: Incase there is any case found, further review and correction can be taken
+
+#confirm relation of respondents to deceased - neonate
+table(vadata$Id10008[which(vadata$isChild==1)])
+
+#confirm Id10351 is not more than the age;(Id10351) How many days old was the baby when the fatal illness started? against age
+table(vadata$ageInDays[which(vadata$Id10351 > vadata$ageInDays)])
+which(vadata$Id10351 > vadata$ageInDays)
+table(vadata$Id10351[which(vadata$Id10351 >= vadata$ageInDays)])
+
+#VA ID of the case that has an issue, track it to the specific values
+vadata$instanceID[which(vadata$Id10351 > vadata$ageInDays)]
+cbind(vadata$ageInDays[which(vadata$Id10351 > vadata$ageInDays)],
+vadata$Id10351[which(vadata$Id10351 > vadata$ageInDays)])
+
+#Check consistencies in related questions
+vadata$Id10189[which(vadata$Id10188 != vadata$Id10189)] #vomit questions
+vadata$Id10227[which(vadata$Id10227!=vadata$Id10228)] #sores questions
+sores = cbind( vadata$Id10227[which(vadata$Id10227 %in% c('yes') & vadata$Id10228 %in% c('no'))],
+                vadata$Id10228[which(vadata$Id10227 %in% c('yes') & vadata$Id10228 %in% c('no'))]) 
+sores
+sores2 = cbind( vadata$Id10227[which(vadata$Id10227 %in% c('no') & vadata$Id10228 %in% c('yes'))],
+                vadata$Id10228[which(vadata$Id10227 %in% c('no') & vadata$Id10228 %in% c('yes'))]) 
+sores2
+## we may also want to convert other variales to different schemes e.g Gender M,F,0,1 etc for any other analysis
+## pick the gender variable and assign all representations according to the scheme you want so as to be uniform
+## i.e N/B: vadata$id10019[vadata$id10019 == "males"] = "1"
+
+```
+
+
+#3. Convert the data into a format that algorithms understand
+```{r converting to algorithm readable format}
+
+
+##vadata_conv = odk2openVA_v151(vadata) #challenge in running this when you rename column, it only accepts default column names (which are hard to use during analysis and cleaning)
+vadata_int4 = map_records_interva4(vadata)
+vadata_ins = map_records_insilicova(vadata)
+
+vadata_ins$AB_SIZE[which(toupper(vadata$Id10365) =="YES" | toupper(vadata$Id10363) =="YES")]="y"
+vadata_int4$AB_SIZE[which(toupper(vadata$Id10365) =="YES" | toupper(vadata$Id10363) =="YES")]="y"
+
+#confirm the coding schemes in the final mapped dataset
+unique(unlist(vadata_int4[,2:ncol(vadata_int4)]))
+unique(unlist(vadata_ins[,2:ncol(vadata_ins)]))
+##unique(unlist(vadata_conv[,2:ncol(vadata_conv)]))
+#write it to a csv and proceed to importing it or use the dataframe and skip step for importing csv
+#writing to csv
+write.csv(vadata_int4,file = "Data/interva4_out.csv", row.names = F)
+write.csv(vadata_ins,file = "Data/ins_out.csv", row.names = F)
+
+write.csv(vadata2,file = "Data/vadata_29_11_2018.csv", row.names = F,  na = "")
+```
+
+
+## Importing VA Data (The CSV that you saved above)
+Import the Interva4_out.csv data set as a data frame called GWdata.This is the csv generated from above. Or you can also continueue using the same dataframe name below (i.e. vadata_int4 dataframe)
+```{r data_import}
+
+## create data.frame called vaData with example data set. To avoid importing strings as factors, set the parameter to false
+#GWData <- read.csv("Data/interva4_out.csv", stringsAsFactors = F )  
+#GWData2 <- read.csv("Data/ins_out.csv", stringsAsFactors = F)  
+#N/B: Alternatively you can use dataset vadata_conv above
+
+GWData = vadata_int4
+GWData2 = vadata_ins
+
+View(head(vadata_int4,n=5))
+View(head(vadata_ins,n=5))
+
+unique(unlist(GWData[,2:ncol(GWData)]))
+unique(unlist(GWData2[,2:ncol(GWData2)]))
+
+names(GWData)         ## print column names (to confirm all your columns were loaded)
+
+#or use View(GWData)
+
+data(probbaseV5)      ## load the SCI for InterVA5 to see the questions for each column name
+View(probbaseV5)     ## Its important since we are going to do some checks with the help of this
+#colnames(probbaseV5)  ## indic - variable name and qdesc - question description
+#probbaseV5[,1]        ## probbaseV5 is a matrix and the first column contains the VA variable names
+                      ## (these match the column names in vaData)
+#probbaseV5[2,1:2]     ## column 2 in probbaseV5 contains a description of the variables
+                      ## (here we take a look at the question for indicator i004a)
+```
+
+## Examining and Reviewing each Variable
+```{r new variables, include=FALSE}
+# This block will not be included in the VA Data Quality Review Protocol as echo=FALSE. You can use this block for R commands and data manipulations which you don't wnat to show in the Protocol but which you need to do in the "background".
+
+# 
+```
+Some of the variables to pay attention to are those that capture data on:
+##### For YES/NO kind of questions: Check for NAs or missing values in the data (spaces) or Check for consistency of the coding schemes across all variables and harmonize them.
+##### TN/B: The dataset was not provided alongside its dictionary. So we had to trace back the function that convereted the file inorder to understand the mappings.
+```{r trace}
+#How to trace a function and confirm its mappings
+#trace(odk2openVA_v141, edit=T)
+```
+
+
+#### Therefore its now clear that the mapping is according to who 2012 format, hence we can use WHO 2016 tool version 1.4.2 as who 2012 as a dictionary
+```{r checking for various coding schemes}
+
+unique(unlist(GWData[,2:ncol(GWData)])) #found different coding schemes , use Convert function as below to unify the coding schemes (excluding column 1(IDs) and last column(which are the ODK unique IDs) )
+
+unique(unlist(GWData2[,2:ncol(GWData2)]))
+```
+
+
+##### Check gender variable if there could be overlapp (gender variable: i019a/i019b)
+```{r explore variables}
+#Code to use 
+#which(GWData$i019a == GWData$i019b) #overlap between male and female (InterVA5)
+which(GWData$MALE == GWData$FEMALE) #overlap between male and female (InterVA4)
+
+genderoverlap = cbind(GWData$MALE[which(GWData$MALE == GWData$FEMALE)],
+                      GWData$FEMALE[which(GWData$MALE == GWData$FEMALE)])
+genderoverlap
+#these without MALE / FEMALE VALUE WILL BE IGNORED BY INTERVA4
+length(which(GWData$MALE == GWData$FEMALE))  #in this case 7
+
+#How to use it to retrieve the overlapped ones
+#INTERVA5
+#which(colnames(GWData) =="i019a") #FIND THE COLUMN INDEX FOR USE BELOW
+#which(colnames(GWData) =="i019b") #FIND THE COLUMN INDEX FOR USE BELOW
+#GWData[which(GWData$i019a == GWData$i019b),4:5] #4,5 are the column index for the gender variables
+#table(GWData[which(GWData$i019a == GWData$i019b),4:5]) #see the data
+
+#INTERVA4
+GWData[which(GWData$MALE == GWData$FEMALE),9:10] #4,5 are the column index for the gender variables
+table(GWData[which(GWData$MALE == GWData$FEMALE),9:10])
+
+#Also check the seasonality overlapp
+#interVA5
+#GWData[which(GWData$i004a == GWData$i004b),c(2,3)]
+#table(GWData[which(GWData$i004a == GWData$i004b),c(2,3)])
+
+#interVA4
+which(colnames(GWData) =="DRY_SEAS") #FIND THE COLUMN INDEX FOR USE BELOW
+which(colnames(GWData) =="WET_SEAS") #FIND THE COLUMN INDEX FOR USE BELOW
+GWData[which(GWData$WET_SEAS == GWData$DRY_SEAS),c(21,22)]
+table(GWData[which(GWData$WET_SEAS == GWData$DRY_SEAS),c(21,22)])
+
+#incase of a "-" or blank in both values probably the interview was not consented and no VA data available.
+```
+
+#### Examining various key varibles i.e seasonality variables,duplicate unique VA site IDs
+```{r characterizing and checking variable X}
+#### first variable
+names(GWData)[1]
+dim(GWData)
+#checking if duplicated IDs exists in the data
+length(unique(GWData$ID)) == nrow(GWData)  
+
+## Incase of any duplicate found, how to identify them 
+ncount = as.data.frame(table(GWData$ID))
+which(ncount$Freq>1)
+ncount$Var1[which(ncount$Freq>1)]
+without_dup_col =vadata[!vadata$instanceID %in% ncount$Var1[which(ncount$Freq>1)],] # getting rows without duplicates
+dim(vadata[!vadata$instanceID %in% ncount$Var1[which(ncount$Freq>1)],])[1] 
+
+#### second variable is
+which(colnames(GWData) =="WET_SEAS") #FIND THE COLUMN INDEX FOR USE BELOW i.e 21 for WET_SEAS
+names(GWData)[21] ## Check the season variable second variable 
+probbaseV5[2,2]   ## i004a/WET_SEAS -- Did s(he) die during the wet season
+#table(GWData$i004a,useNA = "always")  #FOR INTERVA5
+table(GWData$WET_SEAS,useNA = "always") #FOR INTERVA4
+
+#### third variable
+which(colnames(GWData) =="DRY_SEAS") #FIND THE COLUMN INDEX FOR USE BELOW i.e 21 for WET_SEAS
+names(GWData)[22]  ## check the second variable 
+probbaseV5[3,2]   ## i004a/DRY_SEAS -- Did s(he) die during the dry season
+#table(GWData$i004b, useNA = "always") #FOR INTERVA5
+table(GWData$DRY_SEAS, useNA = "always") #FOR INTERVA4
+
+#### check all variables
+
+#apply(GWData, 2, table) ## apply the table() function to all of the columns (i.e., dimension = 2) in vaData
+#look for the NAs in the data and replace with . in case there is any
+#apply(GWData,2,is.na)
+GWData[apply(GWData,2,is.na)] <- "."
+GWData2[apply(GWData2,2,is.na)] <- "."
+
+
+###### remember the secret weapon
+?ConvertData #check the description and how to use the ConvertData function
+new_GWData <- ConvertData(GWData, yesLabel = c("y", "Yes", "Y"), noLabel = c("No", "N", "n"), missLabel = c("Don't Know", "DK", "-", "", " "))
+
+new_GWData2 <- ConvertData(GWData2, yesLabel = c("y", "Yes", "Y"), noLabel = c("No", "N", "n"), missLabel = c("Don't Know", "DK", "-", "", " ","."))
+
+new_GWData = GWData
+new_GWData2 = GWData2
+#modify another function to cater for broad categories
+
+#converting all blanks in the dataset to N 
+new_GWData[new_GWData == "N"] <- "" #blanks are converted to N since the algorithm insilicoVA only recognizes Y,N and .
+new_GWData[new_GWData == "y"] <- "Y"
+
+new_GWData2[new_GWData2 == "y"] <- "Y"
+new_GWData2[new_GWData2 == ""] <- "N"
+
+
+#check again to confirm the coding schemes conversion
+unique(unlist(new_GWData[,2:ncol(new_GWData)]))
+unique(unlist(new_GWData2[,2:ncol(new_GWData2)]))
+```
+
+#4. Run the COD algorithms 
+In the above steps the VA raw data was examined and cleaned and we now have a clean VA data set to run in the algorithm(s). 
+
+*For countries using SmartVA Analyze, export the cleaned dataset to a csv using the following code (SmartVA-Analyze will not work with the GWdata; i.e. this part is only applicable for the countries using SmartVA-Analyze when using their own data to generate this Protocol / Report), run the algorithm and re-import the individual level output of SmartVA-Analyze (see file: cause-of-death) into R using the below code to then merge the input and output file to perform the VA COD Examination steps (see below).*
+```{r exportRunImportSmart, include=FALSE}
+##If you are suing SmartVA-Analzye, set include=TRUE and uncomment the below commnads.
+#write.csv("FileLocation")
+##Run the just exported CSV file in SmartVA-Analyze.
+##Import the "cause-of-death.csv" file back into R.
+#CODsmartVA<-read.csv("/cause-of-death.csv",header=TRUE,stringsAsFactors=FALSE)
+#run InterVA5 on the data above and save it as COD_Output (you can change this)
+
+
+```
+
+## EXAMPLE 1 Run IntervA
+Using the clean data set, we can now run the algorithm(s).
+```{r InterVArun}
+#codeVA()
+gwdata_inter <- codeVA(new_GWData ,data.type = "WHO2012",
+                        model = "InterVA", version = "4.03", HIV = "h",
+                        Malaria = "h", write = FALSE) #write option writes logs
+
+summary(gwdata_inter)
+```
+
+## Run InSilicoVA
+N/B: Disabled for now, will activate later
+```{r InSilicoVArun}
+#codeVA()
+
+colnames(GWData2) = tolower(colnames(GWData2))
+
+gwdata_ins <- codeVA(GWData2, data.type = "WHO2012",
+                      model = "InSilicoVA", Nsim = 10000, auto.length = FALSE,
+                      jump.scale = 0.2)
+```
+
+5. Run the analysis on your COD
+## VA COD Examination
+
+Have a look at the VA COD assignments ...
+```{r examine the cods}
+#InterVA
+summary(gwdata_inter) #get top 5
+summary(gwdata_inter, top = 15) #get top 15
+
+#InsilicoVA
+summary(gwdata_ins) #get top 5
+summary(gwdata_ins, top = 15) #get top 15
+
+length(gwdata_inter[[1]])
+length(GWData$ID)
+
+#InsilicoVA
+#summary(gwdata_ins)
+#length(gwdata_ins[[1]])
+#length(GWData$ID)
+
+#skipped values interVA,
+length(GWData$ID) - length(gwdata_inter[[1]])
+
+#skipped values insilicoVA,
+#length(GWData$ID) - length(gwdata_ins[[1]])
+
+#get all the CSMFs
+int4_csmf = getCSMF(gwdata_inter)
+head(int4_csmf)
+
+top_cod_int4 = getTopCOD(gwdata_inter)
+colnames(top_cod_int4)=c("ID","INTERVA")
+head(top_cod_int4) #preview first rows of top 5 CODs assigned 
+View(top_cod_int4) #get all CODs for all deaths
+
+
+
+top_cod_ins = getTopCOD(gwdata_ins)
+colnames(top_cod_ins)=c("ID","INSILICOVA")
+head(top_cod_ins) #preview first rows of top 5 CODs assigned 
+View(top_cod_ins) #get all CODs for all deaths
+
+
+```
+
+### Merging Algorithm input and output data
+```{r merge COD assignments with IDs and symptoms}
+#combined assignments for InterVA4 by ID
+#combine cod and VA symptoms by ID
+ins_int_merged = merge(top_cod_int4,top_cod_ins, by.y="ID") 
+head(ins_int_merged)
+View(head(ins_int_merged))
+vadata$ID = vadata$instanceID
+cod_vadata_merged = merge(ins_int_merged,vadata, by.y = "ID")
+View(head(cod_vadata_merged))
+
+#combined assignments for insilicoVA by ID
+#vadata_topCOD_ins = getTopCOD(gwdata_ins)
+#merged_data_ins= merge(vadata_topCOD_ins,new_GWData,by.y = "ID")
+#View(merged_data_ins)
+```
+
+### Examining the merged and CODs and 
+
+Explain how you will look at symptoms merged with CODs and assess plausibility.
+```{r examining CODs and cases}
+
+#you can subset and query the COD data filtering by symptoms i.e elders,infants,or any other symptoms etc
+which(cod_vadata_merged$ELDER == "y")
+cod_elders = cod_vadata_merged[which(cod_vadata_merged$ELDER == "y"),] #select only FOR ELDERS
+#View(cod_elders) #Browse the elder datset
+
+##check the dictionary first
+data(probbaseV5) 
+#View(probbaseV5)
+
+# Below, we are examining where RTA(Road traffic accident) is yes and COD is different
+#InterVA4
+RTA.acc.inter=cod_vadata_merged[which(toupper(cod_vadata_merged$O_TRANS) %in% "Y"),] #If merged by symptoms dataset
+#head(RTA.acc.inter)
+
+
+```
+### Checking for unexpected CODs
+```{r unexpected CODs}
+#examine positive hiv/malaria/drowning responses vs the COD assinged
+#drowning.cases = merged_data_inter[which(merged_data_inter$i085o %in% "Y"),] #for InterVA5
+drowning.cases = cod_vadata_merged[which(toupper(cod_vadata_merged$DROWN) %in% "Y"),] #for InterVA4
+#View(drowning.cases)
+
+suicide.cases = cod_vadata_merged[which(toupper(cod_vadata_merged$SUICIDE) %in% "Y"),] #for InterVA4
+#View(suicide.cases)
+
+poison.cases = cod_vadata_merged[which(toupper(cod_vadata_merged$POISON) %in% "Y"),] #for InterVA4
+#View(poison.cases)
+
+fall.cases = cod_vadata_merged[which(toupper(cod_vadata_merged$FALL) %in% "Y"),] #for InterVA4
+#View(fall.cases)
+```
+
+## Male versus Female causes
+Note: Blank for now, will update with time.
+```{r male-female CODs}
+
+```
+
+### Plotting
+
+Create various plots of the resulting COD assignments and CSMFs to support interpretation of the results
+
+Plotting the CSMF from InterVA.
+```{r interva plots}
+# using plotVA()
+plotVA(gwdata_inter, title = "InterVA")
+comp = list(InterVA4_plot2 = gwdata_inter,insilico_plot = gwdata_ins)
+stackplotVA(comp , sample.size.print = TRUE, xlab = "x axis label" , angle = 0 ) #dont rotate x axis lables
+
+
+#customize your own grouping
+#SampleCategory is the default category groupings of CODs used by InterVA, used in the Stack plot above
+data("SampleCategory") # load the dataset as a dataframe, Note:It has 60 causes and their category
+
+#The above category does not include "Undetermined" hence we are going to create a duplicate category add the new category to it and then use it to plot.
+myGrouping = SampleCategory
+myGrouping[,1] = as.character(myGrouping[,1])
+myGrouping = rbind(myGrouping,c("Undetermined","Undetermined"))
+stackplotVA(comp , sample.size.print = TRUE, xlab = "" , 
+            angle = 0, grouping = myGrouping ) #dont rotate x axis lables ,xlab =x axis label
+
+#Do a "DOdge plot"
+stackplotVA(comp , sample.size.print = TRUE, xlab = "" , 
+            angle = 0, grouping = myGrouping , type = "dodge") #dont rotate x axis lables,xlab =x axis label
+
+#to find out types of plots you can put as options, run the following
+?stackplotVA 
+#
+
+```
+Notice any difference? the undetermined is now included in the plots!
+
+Plotting the CSMF from InSilicoVA.
+```{r insilicova plots}
+#plotVA
+```
+
+Plotting the CSMF from all the algorithms together. (Will plot once InsilicoVA results are ready)
+```{r csmf plots}
+#plotVA()
+```
+
+
+
